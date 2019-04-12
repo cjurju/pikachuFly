@@ -1,0 +1,302 @@
+{
+    "Parameters": {
+        "cpSSHKey": {
+            "Description": "Name of an existing EC2 SSH KeyPair",
+            "Type": "AWS::EC2::KeyPair::KeyName"
+        }
+    },
+    "Resources": {
+        "NATGateway": {
+            "Properties": {
+                "AllocationId": {
+                    "Fn::GetAtt": [
+                        "NATGatewayElasticIP",
+                        "AllocationId"
+                    ]
+                },
+                "SubnetId": {
+                    "Ref": "cpPublicSubnet"
+                }
+            },
+            "Type": "AWS::EC2::NatGateway"
+        },
+        "NATGatewayElasticIP": {
+            "Properties": {
+                "Domain": "vpc"
+            },
+            "Type": "AWS::EC2::EIP"
+        },
+        "SecurityGroup01": {
+            "Properties": {
+                "GroupDescription": "SG allows Inbound SSH access",
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": "22",
+                        "IpProtocol": "tcp",
+                        "ToPort": "22"
+                    }
+                ],
+                "VpcId": {
+                    "Ref": "cpVPC"
+                }
+            },
+            "Type": "AWS::EC2::SecurityGroup"
+        },
+        "cpAttachInternetGateway": {
+            "Properties": {
+                "InternetGatewayId": {
+                    "Ref": "cpInternetGateway"
+                },
+                "VpcId": {
+                    "Ref": "cpVPC"
+                }
+            },
+            "Type": "AWS::EC2::VPCGatewayAttachment"
+        },
+        "cpInternetGateway": {
+            "Properties": {
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    }
+                ]
+            },
+            "Type": "AWS::EC2::InternetGateway"
+        },
+        "cpInternetGatewayRoute": {
+            "Properties": {
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "GatewayId": {
+                    "Ref": "cpInternetGateway"
+                },
+                "RouteTableId": {
+                    "Ref": "cpPublicRouteTable"
+                }
+            },
+            "Type": "AWS::EC2::Route"
+        },
+        "cpNATRoute": {
+            "Properties": {
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "NatGatewayId": {
+                    "Ref": "NATGateway"
+                },
+                "RouteTableId": {
+                    "Ref": "cpPrivateRouteTable"
+                }
+            },
+            "Type": "AWS::EC2::Route"
+        },
+        "cpPrivInstance01": {
+            "Properties": {
+                "ImageId": "ami-024fe7d8b3a587508",
+                "InstanceType": "t2.micro",
+                "KeyName": {
+                    "Ref": "cpSSHKey"
+                },
+                "NetworkInterfaces": [
+                    {
+                        "DeleteOnTermination": "true",
+                        "DeviceIndex": "0",
+                        "GroupSet": [
+                            {
+                                "Ref": "SecurityGroup01"
+                            }
+                        ],
+                        "SubnetId": {
+                            "Ref": "cpPrivateSubnet"
+                        }
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "cp_priv_instance_1"
+                    }
+                ]
+            },
+            "Type": "AWS::EC2::Instance"
+        },
+        "cpPrivInstance02": {
+            "Properties": {
+                "ImageId": "ami-024fe7d8b3a587508",
+                "InstanceType": "t2.micro",
+                "KeyName": {
+                    "Ref": "cpSSHKey"
+                },
+                "NetworkInterfaces": [
+                    {
+                        "DeleteOnTermination": "true",
+                        "DeviceIndex": "0",
+                        "GroupSet": [
+                            {
+                                "Ref": "SecurityGroup01"
+                            }
+                        ],
+                        "SubnetId": {
+                            "Ref": "cpPrivateSubnet"
+                        }
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "cp_priv_instance_2"
+                    }
+                ]
+            },
+            "Type": "AWS::EC2::Instance"
+        },
+        "cpPrivateRouteTable": {
+            "Properties": {
+                "VpcId": {
+                    "Ref": "cpVPC"
+                }
+            },
+            "Type": "AWS::EC2::RouteTable"
+        },
+        "cpPrivateSubnet": {
+            "Properties": {
+                "CidrBlock": "10.0.1.0/24",
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    }
+                ],
+                "VpcId": {
+                    "Ref": "cpVPC"
+                }
+            },
+            "Type": "AWS::EC2::Subnet"
+        },
+        "cpPrivateSubnetRouteTableAssociation01": {
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "cpPrivateRouteTable"
+                },
+                "SubnetId": {
+                    "Ref": "cpPrivateSubnet"
+                }
+            },
+            "Type": "AWS::EC2::SubnetRouteTableAssociation"
+        },
+        "cpPubInstance01": {
+            "Properties": {
+                "ImageId": "ami-024fe7d8b3a587508",
+                "InstanceType": "t2.micro",
+                "KeyName": {
+                    "Ref": "cpSSHKey"
+                },
+                "NetworkInterfaces": [
+                    {
+                        "DeleteOnTermination": "true",
+                        "DeviceIndex": "0",
+                        "GroupSet": [
+                            {
+                                "Ref": "SecurityGroup01"
+                            }
+                        ],
+                        "SubnetId": {
+                            "Ref": "cpPublicSubnet"
+                        }
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "cp_public_instance_1"
+                    }
+                ]
+            },
+            "Type": "AWS::EC2::Instance"
+        },
+        "cpPubInstance02": {
+            "Properties": {
+                "ImageId": "ami-024fe7d8b3a587508",
+                "InstanceType": "t2.micro",
+                "KeyName": {
+                    "Ref": "cpSSHKey"
+                },
+                "NetworkInterfaces": [
+                    {
+                        "DeleteOnTermination": "true",
+                        "DeviceIndex": "0",
+                        "GroupSet": [
+                            {
+                                "Ref": "SecurityGroup01"
+                            }
+                        ],
+                        "SubnetId": {
+                            "Ref": "cpPublicSubnet"
+                        }
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "cp_public_instance_2"
+                    }
+                ]
+            },
+            "Type": "AWS::EC2::Instance"
+        },
+        "cpPublicRouteTable": {
+            "Properties": {
+                "VpcId": {
+                    "Ref": "cpVPC"
+                }
+            },
+            "Type": "AWS::EC2::RouteTable"
+        },
+        "cpPublicSubnet": {
+            "Properties": {
+                "CidrBlock": "10.0.0.0/24",
+                "MapPublicIpOnLaunch": "true",
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    }
+                ],
+                "VpcId": {
+                    "Ref": "cpVPC"
+                }
+            },
+            "Type": "AWS::EC2::Subnet"
+        },
+        "cpPublicSubnetRouteTableAssociation01": {
+            "Properties": {
+                "RouteTableId": {
+                    "Ref": "cpPublicRouteTable"
+                },
+                "SubnetId": {
+                    "Ref": "cpPublicSubnet"
+                }
+            },
+            "Type": "AWS::EC2::SubnetRouteTableAssociation"
+        },
+        "cpVPC": {
+            "Properties": {
+                "CidrBlock": "10.0.0.0/16",
+                "Tags": [
+                    {
+                        "Key": "Application",
+                        "Value": {
+                            "Ref": "AWS::StackId"
+                        }
+                    }
+                ]
+            },
+            "Type": "AWS::EC2::VPC"
+        }
+    }
+}
