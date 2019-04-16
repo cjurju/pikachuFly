@@ -1,17 +1,17 @@
-from troposphere import Template, Parameter, Ref, GetAtt
+from troposphere import Template, Parameter, Ref, GetAtt, Output,\
+    Base64, Join
 import os
 from troposphere.ec2 import VPC, Subnet, Instance,\
     InternetGateway, Tags, VPCGatewayAttachment, EIP,\
     SecurityGroup, SecurityGroupRule, SecurityGroupIngress, NetworkInterfaceProperty,\
     RouteTable, Route, SubnetRouteTableAssociation, \
     NetworkAcl, NetworkAclEntry, SubnetNetworkAclAssociation,PortRange,\
-    NatGateway
+    NatGateway, EIPAssociation
 
 # Q&A
-# 1. Ec2's from the same Subnet cannot communicate due to the SG applied
-# 2. Would be NetworkAcl more suitable? Did not make it work
-# 3. Separate route tables for public and private subnet?
-# 4. Tags and Output
+# 1. Tags and Output
+# 2. Change Set Before Updating the stacks
+# 3. What's the best way to handle security groups? 1 security group per instance?
 
 # Object that will generate the template
 t = Template()
@@ -41,6 +41,8 @@ VPC = t.add_resource(
     VPC(
         'cpVPC',
         CidrBlock='10.0.0.0/16',
+        EnableDnsSupport='true',
+        EnableDnsHostnames='true',
         Tags=Tags(
             Application=ref_stack_id)
     )
@@ -161,6 +163,16 @@ privateToNATRoute = t.add_resource(
     )
 )
 
+# Allocate WebServer EIP
+webServerEIP = t.add_resource(
+    EIP(
+        "webServerElasticIP",
+        Domain='vpc'
+    )
+)
+
+
+
 '''
 # Define Network ACL on Subnet Level
 networkAcl = t.add_resource(
@@ -199,10 +211,10 @@ subnetNetworkAclAssociation = t.add_resource(
 # - allows Inbound SSH access - Port 22
 
 # NOT NECESSARY to have such fine-grained security? (Ilie)
-sg01 = t.add_resource(
+webServerSecurityGroup = t.add_resource(
     SecurityGroup(
-        'SecurityGroup01',
-        GroupDescription='SG allows Inbound SSH access',
+        'cpWebServerSecurityGroup',
+        GroupDescription='Web Server Security Group',
         VpcId=Ref(VPC),
         SecurityGroupIngress=[
             SecurityGroupRule(
@@ -210,10 +222,45 @@ sg01 = t.add_resource(
                 FromPort='22',
                 ToPort='22',
                 CidrIp='0.0.0.0/0'
+            ),
+            SecurityGroupRule(
+                IpProtocol='tcp',
+                FromPort='80',
+                ToPort='80',
+                CidrIp='0.0.0.0/0'
+            ),
+            SecurityGroupRule(
+                IpProtocol='tcp',
+                FromPort='81',
+                ToPort='81',
+                CidrIp='0.0.0.0/0'
             )
         ]
     )
 )
+
+backendSecurityGroup = t.add_resource(
+    SecurityGroup(
+        'cpBackendSecurityGroup',
+        GroupDescription='Backend Server Security Group',
+        VpcId=Ref(VPC),
+        SecurityGroupIngress=[
+            SecurityGroupRule(
+                IpProtocol='tcp',
+                FromPort='22',
+                ToPort='22',
+                CidrIp='0.0.0.0/0'
+            ),
+            SecurityGroupRule(
+                IpProtocol='tcp',
+                FromPort='8081',
+                ToPort='8081',
+                CidrIp='0.0.0.0/0'
+            )
+        ]
+    )
+)
+
 
 # Define EC2 instances
 # - 2 in the public subnet
@@ -228,7 +275,7 @@ pubInst01 = t.add_resource(
         NetworkInterfaces=[
             NetworkInterfaceProperty(
                 GroupSet=[
-                    Ref(sg01)],
+                    Ref(webServerSecurityGroup)],
                 DeviceIndex='0',
                 DeleteOnTermination='true',
                 SubnetId=Ref(publicSubnet)
@@ -237,24 +284,10 @@ pubInst01 = t.add_resource(
     )
 )
 
-pubInst02 = t.add_resource(
-    Instance(
-        'cpPubInstance02',
-        ImageId=ImageID,
-        InstanceType='t2.micro',
-        Tags=[{"Key": "Name", "Value": "cp_public_instance_2"}],
-        KeyName=Ref(ssh_keyname_param),
-        NetworkInterfaces=[
-            NetworkInterfaceProperty(
-                GroupSet=[
-                    Ref(sg01)],
-                DeviceIndex='0',
-                DeleteOnTermination='true',
-                SubnetId=Ref(publicSubnet)
-            )
-        ]
-    )
-)
+
+'''
+                
+                '''
 
 privInst01 = t.add_resource(
     Instance(
@@ -266,34 +299,43 @@ privInst01 = t.add_resource(
         NetworkInterfaces=[
             NetworkInterfaceProperty(
                 GroupSet=[
-                    Ref(sg01)],
+                    Ref(backendSecurityGroup)],
                 DeviceIndex='0',
                 DeleteOnTermination='true',
                 SubnetId=Ref(privateSubnet)
             )
-        ]
+        ],
+        UserData=Base64(
+            Join('', [
+                '#!/bin/bash -v\n',
+                "sudo yum install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-$(rpm -E '%{rhel}').noarch.rpm &>/root/user-data.log\n",
+                'sudo yum install -y python-pip &>>/root/user-data.log\n',
+                'sudo pip install Flask &>>/root/user-data.log\n',
+                'sudo yum install -y git &>>/root/user-data.log\n',
+                'sudo mkdir -p /root/work && cd /root/work/ && git clone -v https://github.com/cjurju/pikachuFly.git . &>>/root/user-data.log\n',
+                'sudo python /root/work/python-troposphere/HelloWorld.py &>>/root/user-data.log'
+            ]))
     )
 )
 
-privInst02 = t.add_resource(
-    Instance(
-        'cpPrivInstance02',
-        ImageId=ImageID,
-        InstanceType='t2.micro',
-        Tags=[{"Key": "Name", "Value": "cp_priv_instance_2"}],
-        KeyName=Ref(ssh_keyname_param),
-        NetworkInterfaces=[
-            NetworkInterfaceProperty(
-                GroupSet=[
-                    Ref(sg01)],
-                DeviceIndex='0',
-                DeleteOnTermination='true',
-                SubnetId=Ref(privateSubnet)
-            )
-        ]
+# Associate the EIP to the webServer EC2 instance
+webServerEIPAssociation = t.add_resource(
+    EIPAssociation(
+        "webServerEIPAssociation",
+        AllocationId=GetAtt(webServerEIP, 'AllocationId'),
+        InstanceId=Ref(pubInst01)
     )
 )
 
+#### Outputs ####
+
+t.add_output([
+    Output(
+        "webServerEIP",
+        Description="Elastic IP of the web server EC2",
+        Value=GetAtt(webServerEIP,'AllocationId')
+    )
+])
 
 print(t.to_json())
 

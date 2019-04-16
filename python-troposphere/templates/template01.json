@@ -1,4 +1,15 @@
 {
+    "Outputs": {
+        "webServerEIP": {
+            "Description": "Elastic IP of the web server EC2",
+            "Value": {
+                "Fn::GetAtt": [
+                    "webServerElasticIP",
+                    "AllocationId"
+                ]
+            }
+        }
+    },
     "Parameters": {
         "cpSSHKey": {
             "Description": "Name of an existing EC2 SSH KeyPair",
@@ -26,23 +37,6 @@
             },
             "Type": "AWS::EC2::EIP"
         },
-        "SecurityGroup01": {
-            "Properties": {
-                "GroupDescription": "SG allows Inbound SSH access",
-                "SecurityGroupIngress": [
-                    {
-                        "CidrIp": "0.0.0.0/0",
-                        "FromPort": "22",
-                        "IpProtocol": "tcp",
-                        "ToPort": "22"
-                    }
-                ],
-                "VpcId": {
-                    "Ref": "cpVPC"
-                }
-            },
-            "Type": "AWS::EC2::SecurityGroup"
-        },
         "cpAttachInternetGateway": {
             "Properties": {
                 "InternetGatewayId": {
@@ -53,6 +47,29 @@
                 }
             },
             "Type": "AWS::EC2::VPCGatewayAttachment"
+        },
+        "cpBackendSecurityGroup": {
+            "Properties": {
+                "GroupDescription": "Backend Server Security Group",
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": "22",
+                        "IpProtocol": "tcp",
+                        "ToPort": "22"
+                    },
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": "8081",
+                        "IpProtocol": "tcp",
+                        "ToPort": "8081"
+                    }
+                ],
+                "VpcId": {
+                    "Ref": "cpVPC"
+                }
+            },
+            "Type": "AWS::EC2::SecurityGroup"
         },
         "cpInternetGateway": {
             "Properties": {
@@ -104,7 +121,7 @@
                         "DeviceIndex": "0",
                         "GroupSet": [
                             {
-                                "Ref": "SecurityGroup01"
+                                "Ref": "cpBackendSecurityGroup"
                             }
                         ],
                         "SubnetId": {
@@ -117,37 +134,23 @@
                         "Key": "Name",
                         "Value": "cp_priv_instance_1"
                     }
-                ]
-            },
-            "Type": "AWS::EC2::Instance"
-        },
-        "cpPrivInstance02": {
-            "Properties": {
-                "ImageId": "ami-024fe7d8b3a587508",
-                "InstanceType": "t2.micro",
-                "KeyName": {
-                    "Ref": "cpSSHKey"
-                },
-                "NetworkInterfaces": [
-                    {
-                        "DeleteOnTermination": "true",
-                        "DeviceIndex": "0",
-                        "GroupSet": [
-                            {
-                                "Ref": "SecurityGroup01"
-                            }
-                        ],
-                        "SubnetId": {
-                            "Ref": "cpPrivateSubnet"
-                        }
-                    }
                 ],
-                "Tags": [
-                    {
-                        "Key": "Name",
-                        "Value": "cp_priv_instance_2"
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -v\n",
+                                "sudo yum install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-$(rpm -E '%{rhel}').noarch.rpm &>/root/user-data.log\n",
+                                "sudo yum install -y python-pip &>>/root/user-data.log\n",
+                                "sudo pip install Flask &>>/root/user-data.log\n",
+                                "sudo yum install -y git &>>/root/user-data.log\n",
+                                "sudo mkdir -p /root/work && cd /root/work/ && git clone -v https://github.com/cjurju/pikachuFly.git . &>>/root/user-data.log\n",
+                                "sudo python /root/work/python-troposphere/HelloWorld.py &>>/root/user-data.log"
+                            ]
+                        ]
                     }
-                ]
+                }
             },
             "Type": "AWS::EC2::Instance"
         },
@@ -200,7 +203,7 @@
                         "DeviceIndex": "0",
                         "GroupSet": [
                             {
-                                "Ref": "SecurityGroup01"
+                                "Ref": "cpWebServerSecurityGroup"
                             }
                         ],
                         "SubnetId": {
@@ -212,36 +215,6 @@
                     {
                         "Key": "Name",
                         "Value": "cp_public_instance_1"
-                    }
-                ]
-            },
-            "Type": "AWS::EC2::Instance"
-        },
-        "cpPubInstance02": {
-            "Properties": {
-                "ImageId": "ami-024fe7d8b3a587508",
-                "InstanceType": "t2.micro",
-                "KeyName": {
-                    "Ref": "cpSSHKey"
-                },
-                "NetworkInterfaces": [
-                    {
-                        "DeleteOnTermination": "true",
-                        "DeviceIndex": "0",
-                        "GroupSet": [
-                            {
-                                "Ref": "SecurityGroup01"
-                            }
-                        ],
-                        "SubnetId": {
-                            "Ref": "cpPublicSubnet"
-                        }
-                    }
-                ],
-                "Tags": [
-                    {
-                        "Key": "Name",
-                        "Value": "cp_public_instance_2"
                     }
                 ]
             },
@@ -287,6 +260,8 @@
         "cpVPC": {
             "Properties": {
                 "CidrBlock": "10.0.0.0/16",
+                "EnableDnsHostnames": "true",
+                "EnableDnsSupport": "true",
                 "Tags": [
                     {
                         "Key": "Application",
@@ -297,6 +272,55 @@
                 ]
             },
             "Type": "AWS::EC2::VPC"
+        },
+        "cpWebServerSecurityGroup": {
+            "Properties": {
+                "GroupDescription": "Web Server Security Group",
+                "SecurityGroupIngress": [
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": "22",
+                        "IpProtocol": "tcp",
+                        "ToPort": "22"
+                    },
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": "80",
+                        "IpProtocol": "tcp",
+                        "ToPort": "80"
+                    },
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "FromPort": "81",
+                        "IpProtocol": "tcp",
+                        "ToPort": "81"
+                    }
+                ],
+                "VpcId": {
+                    "Ref": "cpVPC"
+                }
+            },
+            "Type": "AWS::EC2::SecurityGroup"
+        },
+        "webServerEIPAssociation": {
+            "Properties": {
+                "AllocationId": {
+                    "Fn::GetAtt": [
+                        "webServerElasticIP",
+                        "AllocationId"
+                    ]
+                },
+                "InstanceId": {
+                    "Ref": "cpPubInstance01"
+                }
+            },
+            "Type": "AWS::EC2::EIPAssociation"
+        },
+        "webServerElasticIP": {
+            "Properties": {
+                "Domain": "vpc"
+            },
+            "Type": "AWS::EC2::EIP"
         }
     }
 }
