@@ -11,7 +11,8 @@ from troposphere.ec2 import VPC, Subnet, Instance,\
 # Q&A
 # 1. Tags and Output
 # 2. Change Set Before Updating the stacks
-# 3. What's the best way to handle security groups? 1 security group per instance?
+# 3. What's the best practice in handling the stacks?
+#    At the moment I'm recreating over and over again
 
 # Object that will generate the template
 t = Template()
@@ -228,12 +229,6 @@ webServerSecurityGroup = t.add_resource(
                 FromPort='80',
                 ToPort='80',
                 CidrIp='0.0.0.0/0'
-            ),
-            SecurityGroupRule(
-                IpProtocol='tcp',
-                FromPort='81',
-                ToPort='81',
-                CidrIp='0.0.0.0/0'
             )
         ]
     )
@@ -265,29 +260,7 @@ backendSecurityGroup = t.add_resource(
 # Define EC2 instances
 # - 2 in the public subnet
 # - 2 in the private subnet
-pubInst01 = t.add_resource(
-    Instance(
-        'cpPubInstance01',
-        ImageId=ImageID,
-        InstanceType='t2.micro',
-        Tags=[{"Key": "Name", "Value": "cp_public_instance_1"}],
-        KeyName=Ref(ssh_keyname_param),
-        NetworkInterfaces=[
-            NetworkInterfaceProperty(
-                GroupSet=[
-                    Ref(webServerSecurityGroup)],
-                DeviceIndex='0',
-                DeleteOnTermination='true',
-                SubnetId=Ref(publicSubnet)
-            )
-        ]
-    )
-)
 
-
-'''
-                
-                '''
 
 privInst01 = t.add_resource(
     Instance(
@@ -313,10 +286,49 @@ privInst01 = t.add_resource(
                 'sudo pip install Flask &>>/root/user-data.log\n',
                 'sudo yum install -y git &>>/root/user-data.log\n',
                 'sudo mkdir -p /root/work && cd /root/work/ && git clone -v https://github.com/cjurju/pikachuFly.git . &>>/root/user-data.log\n',
-                'sudo python /root/work/python-troposphere/HelloWorld.py &>>/root/user-data.log'
+                'sudo python /root/work/python-troposphere/HelloWorld.py & &>>/root/user-data.log'
             ]))
     )
 )
+
+
+pubInst01 = t.add_resource(
+    Instance(
+        'cpPubInstance01',
+        ImageId=ImageID,
+        InstanceType='t2.micro',
+        Tags=[{"Key": "Name", "Value": "cp_public_instance_1"}],
+        KeyName=Ref(ssh_keyname_param),
+        NetworkInterfaces=[
+            NetworkInterfaceProperty(
+                GroupSet=[
+                    Ref(webServerSecurityGroup)],
+                DeviceIndex='0',
+                DeleteOnTermination='true',
+                SubnetId=Ref(publicSubnet)
+            )
+        ],
+        UserData=Base64(
+            Join('', [
+                '#!/bin/bash -v\n',
+                "sudo yum install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-$(rpm -E '%{rhel}').noarch.rpm &>/root/user-data.log\n",
+                "sudo yum install -y nginx &>>/root/user-data.log\n",
+                "sudo systemctl enable nginx &>>/root/user-data.log\n",
+                "sudo sed -i 's/\ default_server//g' /etc/nginx/nginx.conf &>>/root/user-data.log\n",
+                'sudo yum install -y git &>>/root/user-data.log\n',
+                "sudo mkdir -p /root/work && cd /root/work/ && git clone -v https://github.com/cjurju/pikachuFly.git . &>>/root/user-data.log\n",
+                "sudo cp /root/work/python-troposphere/config/cpNginx.conf /etc/nginx/conf.d/ &>>/root/user-data.log\n",
+                "sudo systemctl start nginx &>>/root/user-data.log"
+            ]
+
+            )
+        )
+    )
+)
+
+
+
+
 
 # Associate the EIP to the webServer EC2 instance
 webServerEIPAssociation = t.add_resource(

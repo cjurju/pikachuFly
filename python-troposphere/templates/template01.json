@@ -146,7 +146,7 @@
                                 "sudo pip install Flask &>>/root/user-data.log\n",
                                 "sudo yum install -y git &>>/root/user-data.log\n",
                                 "sudo mkdir -p /root/work && cd /root/work/ && git clone -v https://github.com/cjurju/pikachuFly.git . &>>/root/user-data.log\n",
-                                "sudo python /root/work/python-troposphere/HelloWorld.py &>>/root/user-data.log"
+                                "sudo python /root/work/python-troposphere/HelloWorld.py & &>>/root/user-data.log"
                             ]
                         ]
                     }
@@ -216,7 +216,25 @@
                         "Key": "Name",
                         "Value": "cp_public_instance_1"
                     }
-                ]
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -v\n",
+                                "sudo yum install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-$(rpm -E '%{rhel}').noarch.rpm &>/root/user-data.log\n",
+                                "sudo yum install -y nginx &>>/root/user-data.log\n",
+                                "sudo systemctl enable nginx &>>/root/user-data.log\n",
+                                "sudo sed -i 's/\\ default_server//g' /etc/nginx/nginx.conf &>>/root/user-data.log\n",
+                                "sudo yum install -y git &>>/root/user-data.log\n",
+                                "sudo mkdir -p /root/work && cd /root/work/ && git clone -v https://github.com/cjurju/pikachuFly.git . &>>/root/user-data.log\n",
+                                "sudo cp /root/work/python-troposphere/config/cpNginx.conf /etc/nginx/conf.d/ &>>/root/user-data.log\n",
+                                "sudo systemctl start nginx &>>/root/user-data.log"
+                            ]
+                        ]
+                    }
+                }
             },
             "Type": "AWS::EC2::Instance"
         },
@@ -288,12 +306,6 @@
                         "FromPort": "80",
                         "IpProtocol": "tcp",
                         "ToPort": "80"
-                    },
-                    {
-                        "CidrIp": "0.0.0.0/0",
-                        "FromPort": "81",
-                        "IpProtocol": "tcp",
-                        "ToPort": "81"
                     }
                 ],
                 "VpcId": {
